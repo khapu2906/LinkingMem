@@ -1,3 +1,7 @@
+
+<div align="center">
+  <img src="https://github.com/khapu2906/LinkingMem/blob/main/assets/logo.png?raw=true" alt="LinkingMem" width="200" />
+
 # LinkingMem — Graph-native RAG Engine
 
 A high-performance Rust + Python engine for graph-based RAG, unifying vector search, graph traversal, and LLM reasoning in a single system.
