@@ -1,0 +1,10 @@
+target/
+data/
+__pycache__/
+*.pyc
+.env
+.env.local
+*.bin
+*.mmap
+data
+.venv

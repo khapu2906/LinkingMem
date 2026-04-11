@@ -1,0 +1,57 @@
+# ============================================================
+# Plugin endpoint configuration
+# ============================================================
+# This file tells the engine where to find each plugin.
+# Path to this file is set via PLUGIN_CONFIG_FILE in .env.
+#
+# transport = "http"  → TCP connection (local or remote)
+# transport = "unix"  → Unix socket (same machine, ~10x lower latency)
+#
+# Each section can point to a different server, or all three
+# can share one server (the reference Python implementation
+# handles embed + extract + generate on a single process).
+#
+# See docs/PLUGIN_INTERFACE.md for the full endpoint spec.
+# ============================================================
+
+# ------------------------------------------------------------
+# Embedding plugin  →  POST /embed/text
+# ------------------------------------------------------------
+[plugins.embed_text]
+transport = "unix"
+socket    = "/tmp/ai-graph-plugin.sock"
+
+# ------------------------------------------------------------
+# Entity extraction plugin  →  POST /extract
+# ------------------------------------------------------------
+[plugins.extract]
+transport = "unix"
+socket    = "/tmp/ai-graph-plugin.sock"
+
+# ------------------------------------------------------------
+# Answer generation plugin  →  POST /generate
+# ------------------------------------------------------------
+[plugins.generate]
+transport = "unix"
+socket    = "/tmp/ai-graph-plugin.sock"
+
+# ============================================================
+# Query pipeline defaults
+# ============================================================
+# These are the server-level defaults used when a /query
+# request does not supply explicit QueryOptions.
+# All values can also be set via environment variables
+# (env vars take priority over this file).
+# ============================================================
+
+[query]
+# Top-k seeds from HNSW vector search         (env: HNSW_K)
+hnsw_k            = 20
+# BFS expansion depth from seeds              (env: BFS_DEPTH)
+bfs_depth         = 2
+# Max nodes collected during BFS              (env: BFS_MAX_NODES)
+bfs_max_nodes     = 500
+# Top-N nodes passed as context to the LLM   (env: CONTEXT_TOP_N)
+context_top_n     = 50
+# Minimum relevance score for LLM context    (env: CONTEXT_MIN_SCORE)
+context_min_score = 0.3

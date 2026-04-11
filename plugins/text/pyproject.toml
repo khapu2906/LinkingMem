@@ -1,0 +1,46 @@
+[project]
+name = "ai-graph-engine-text-plugin"
+version = "0.1.0"
+description = "Text plugin for AI Graph Engine — embed, extract, generate"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi==0.115.0",
+    "uvicorn[standard]==0.30.6",
+    "pydantic==2.9.0",
+    "sentence-transformers==3.1.1",
+    # CPU-only torch — much smaller than CUDA build, sufficient for local embed
+    "torch==2.4.1",
+    "numpy==1.26.4",
+    # LLM providers — install only the one you need (all are optional except gemini default)
+    "google-genai>=1.0.0",          # LLM_PROVIDER=gemini (default)
+    # "openai>=1.0.0",              # LLM_PROVIDER=openai
+    # "anthropic>=0.40.0",          # LLM_PROVIDER=anthropic
+    # ONNX backend — for EMBED_BACKEND=onnx (faster inference, no PyTorch at runtime)
+    # "optimum[onnxruntime]>=1.16",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "httpx>=0.27",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths    = ["tests"]
+# plugins/ must be on sys.path so that `text.*` package imports resolve
+pythonpath   = [".."]
+
+[tool.uv]
+# Use PyTorch CPU-only index for local dev to avoid downloading the 2 GB CUDA build.
+# Remove this section (or override via UV_EXTRA_INDEX_URL) for GPU deployments.
+index-strategy = "unsafe-best-match"
+
+[[tool.uv.index]]
+name    = "pytorch-cpu"
+url     = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }

@@ -1,0 +1,107 @@
+version: "3.9"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Two deployment modes — choose one:
+#
+#   HTTP mode (default, two containers):
+#     docker compose up
+#
+#   Full mode (one container, unix socket):
+#     docker compose --profile full up
+#
+# All secrets/config come from .env (copy .env.example → .env and edit).
+# ══════════════════════════════════════════════════════════════════════════════
+
+services:
+
+  # ── HTTP mode: Python plugin ─────────────────────────────────────────────────
+  plugins:
+    build:
+      context: ./plugins/text
+      dockerfile: Dockerfile
+      args:
+        EMBED_MODEL: ${EMBED_MODEL:-all-MiniLM-L6-v2}
+    ports:
+      - "${PLUGIN_PORT:-8001}:8001"
+    environment:
+      EMBED_MODEL:        ${EMBED_MODEL:-all-MiniLM-L6-v2}
+      EMBED_BATCH_SIZE:   ${EMBED_BATCH_SIZE:-32}
+      LLM_PROVIDER:       ${LLM_PROVIDER:-gemini}
+      EXTRACT_MODEL:      ${EXTRACT_MODEL:-gemini-2.5-flash-lite}
+      GENERATE_MODEL:     ${GENERATE_MODEL:-gemini-2.5-flash-lite}
+      GEMINI_API_KEY:     ${GEMINI_API_KEY:-}
+      OPENAI_API_KEY:     ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY:  ${ANTHROPIC_API_KEY:-}
+      PLUGIN_AUTH_TOKEN:  ${PLUGIN_AUTH_TOKEN:-}
+      LLM_MAX_CONCURRENCY: ${LLM_MAX_CONCURRENCY:-8}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    profiles: ["", "http"]
+
+  # ── HTTP mode: Rust engine ────────────────────────────────────────────────────
+  engine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: engine
+    ports:
+      - "${BIND_PORT:-8000}:8000"
+    environment:
+      BIND_ADDR:               0.0.0.0:8000
+      DATA_DIR:                /data
+      PLUGIN_URL:              http://plugins:8001
+      RUST_LOG:                ${RUST_LOG:-info}
+      API_KEYS:                ${API_KEYS:-}
+      RATE_LIMIT_PER_MINUTE:   ${RATE_LIMIT_PER_MINUTE:-60}
+      RATE_LIMIT_BURST:        ${RATE_LIMIT_BURST:-20}
+      DELTA_MERGE_THRESHOLD:   ${DELTA_MERGE_THRESHOLD:-500}
+      EMBED_CACHE_SIZE:        ${EMBED_CACHE_SIZE:-50000}
+      QUERY_CACHE_SIZE:        ${QUERY_CACHE_SIZE:-10000}
+      QUERY_CACHE_TTL_SECS:    ${QUERY_CACHE_TTL_SECS:-300}
+      INSTANCE_ID:             ${INSTANCE_ID:-0}
+    volumes:
+      - ./data:/data
+    depends_on:
+      plugins:
+        condition: service_healthy
+    profiles: ["", "http"]
+
+  # ── Full mode: engine + plugin in one container (unix socket) ─────────────────
+  engine-full:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: full
+      args:
+        EMBED_MODEL: ${EMBED_MODEL:-all-MiniLM-L6-v2}
+    ports:
+      - "${BIND_PORT:-8000}:8000"
+    environment:
+      BIND_ADDR:               0.0.0.0:8000
+      DATA_DIR:                /data
+      PLUGIN_SOCKET:           /tmp/ai-graph-plugin.sock
+      RUST_LOG:                ${RUST_LOG:-info}
+      # Plugin / LLM
+      EMBED_MODEL:             ${EMBED_MODEL:-all-MiniLM-L6-v2}
+      EMBED_BATCH_SIZE:        ${EMBED_BATCH_SIZE:-32}
+      LLM_PROVIDER:            ${LLM_PROVIDER:-gemini}
+      EXTRACT_MODEL:           ${EXTRACT_MODEL:-gemini-2.5-flash-lite}
+      GENERATE_MODEL:          ${GENERATE_MODEL:-gemini-2.5-flash-lite}
+      GEMINI_API_KEY:          ${GEMINI_API_KEY:-}
+      OPENAI_API_KEY:          ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY:       ${ANTHROPIC_API_KEY:-}
+      # Engine
+      API_KEYS:                ${API_KEYS:-}
+      RATE_LIMIT_PER_MINUTE:   ${RATE_LIMIT_PER_MINUTE:-60}
+      RATE_LIMIT_BURST:        ${RATE_LIMIT_BURST:-20}
+      DELTA_MERGE_THRESHOLD:   ${DELTA_MERGE_THRESHOLD:-500}
+      EMBED_CACHE_SIZE:        ${EMBED_CACHE_SIZE:-50000}
+      QUERY_CACHE_SIZE:        ${QUERY_CACHE_SIZE:-10000}
+      QUERY_CACHE_TTL_SECS:    ${QUERY_CACHE_TTL_SECS:-300}
+      INSTANCE_ID:             ${INSTANCE_ID:-0}
+    volumes:
+      - ./data:/data
+    profiles: ["full"]

@@ -1,0 +1,23 @@
+# plugins.toml — unix socket preset (used by the `full` Docker image)
+# All three plugin endpoints share one socket file.
+# The socket path is also configurable via PLUGIN_SOCKET env var,
+# but the path here must match what entrypoint-full.sh passes to uvicorn.
+
+[plugins.embed_text]
+transport = "unix"
+socket    = "/tmp/ai-graph-plugin.sock"
+
+[plugins.extract]
+transport = "unix"
+socket    = "/tmp/ai-graph-plugin.sock"
+
+[plugins.generate]
+transport = "unix"
+socket    = "/tmp/ai-graph-plugin.sock"
+
+[query]
+hnsw_k            = 20
+bfs_depth         = 2
+bfs_max_nodes     = 500
+context_top_n     = 50
+context_min_score = 0.3
