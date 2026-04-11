@@ -8,7 +8,7 @@ resolution-markers = [
 ]
 
 [[package]]
-name = "ai-graph-engine-text-plugin"
+name = "LinkingMem-text-plugin"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

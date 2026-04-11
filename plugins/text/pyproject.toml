@@ -1,5 +1,5 @@
 [project]
-name = "ai-graph-engine-text-plugin"
+name = "LinkingMem-text-plugin"
 version = "0.1.0"
 description = "Text plugin for AI Graph Engine — embed, extract, generate"
 requires-python = ">=3.11"

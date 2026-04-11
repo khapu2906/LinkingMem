@@ -12,8 +12,8 @@ pass() { echo -e "  ${GREEN}✓${NC} $1"; }
 fail() { echo -e "  ${RED}✗${NC} $1"; exit 1; }
 info() { echo -e "\n${BOLD}${YELLOW}▶ $1${NC}"; }
 
-ENGINE_IMG="ai-graph-engine:engine-test"
-FULL_IMG="ai-graph-engine:full-test"
+ENGINE_IMG="LinkingMem:engine-test"
+FULL_IMG="LinkingMem:full-test"
 ENGINE_PORT=19000
 FULL_PORT=19001
 NET="ai-graph-test-net"

@@ -21,7 +21,7 @@ graph TD
 ## 2. Directory Structure
 
 ```
-ai-graph-engine/
+LinkingMem/
 │
 ├── core/                        ← Rust engine
 │   └── src/

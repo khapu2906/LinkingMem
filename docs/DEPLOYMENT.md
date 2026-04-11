@@ -30,8 +30,8 @@ The engine ships as two Docker images. Choose the one that fits your deployment:
 
 | Image | Description | Size |
 |---|---|---|
-| `ai-graph-engine:engine` | Rust engine only. Bring your own plugin. | ~50 MB |
-| `ai-graph-engine:full` | Rust engine + Python text plugin in one container. | ~2–3 GB |
+| `LinkingMem:engine` | Rust engine only. Bring your own plugin. | ~50 MB |
+| `LinkingMem:full` | Rust engine + Python text plugin in one container. | ~2–3 GB |
 
 ### engine — bring your own plugin
 
@@ -61,7 +61,7 @@ Use this when:
 
 ```bash
 git clone <repo>
-cd ai-graph-engine
+cd LinkingMem
 cp .env.example .env
 # Edit .env — set at minimum your LLM API key:
 #   GEMINI_API_KEY=your-key   (or OPENAI_API_KEY / ANTHROPIC_API_KEY)
@@ -142,15 +142,15 @@ graph TD
 
 ```bash
 # Engine only
-docker build --target engine -t ai-graph-engine:engine .
+docker build --target engine -t LinkingMem:engine .
 
 # Full (default embedding model: all-MiniLM-L6-v2)
-docker build --target full -t ai-graph-engine:full .
+docker build --target full -t LinkingMem:full .
 
 # Full with a different embedding model baked in
 docker build --target full \
   --build-arg EMBED_MODEL=BAAI/bge-m3 \
-  -t ai-graph-engine:full-bge .
+  -t LinkingMem:full-bge .
 ```
 
 ---
@@ -167,7 +167,7 @@ All three endpoints (embed / extract / generate) are routed to the same URL.
 docker run -p 8000:8000 \
   -v ./data:/data \
   -e PLUGIN_URL=http://my-plugin-server:8001 \
-  ai-graph-engine:engine
+  LinkingMem:engine
 ```
 
 Or put it in `.env` and use `--env-file`:
@@ -180,7 +180,7 @@ OPENAI_API_KEY=sk-...
 ```
 
 ```bash
-docker run -p 8000:8000 -v ./data:/data --env-file .env ai-graph-engine:engine
+docker run -p 8000:8000 -v ./data:/data --env-file .env LinkingMem:engine
 ```
 
 ### Option B — Custom plugins.toml (per-endpoint config)
@@ -212,7 +212,7 @@ Mount at runtime:
 docker run -p 8000:8000 \
   -v ./data:/data \
   -v ./my-plugins.toml:/app/plugins.toml:ro \
-  ai-graph-engine:engine
+  LinkingMem:engine
 ```
 
 Or tell the engine where the file is via env:
@@ -227,7 +227,7 @@ docker run -p 8000:8000 \
   -v ./data:/data \
   -v ./my-plugins.toml:/config/plugins.toml:ro \
   --env-file .env \
-  ai-graph-engine:engine
+  LinkingMem:engine
 ```
 
 ### Option C — Extend the engine image
@@ -235,7 +235,7 @@ docker run -p 8000:8000 \
 Bundle your plugin into a single image derived from `engine`:
 
 ```dockerfile
-FROM ai-graph-engine:engine
+FROM LinkingMem:engine
 
 # Add your plugin binary (any language)
 COPY my-plugin /usr/local/bin/my-plugin
@@ -436,7 +436,7 @@ server {
 tar -czf backup-$(date +%Y%m%d-%H%M%S).tar.gz data/
 
 # Daily cron
-echo "0 2 * * * cd /opt/ai-graph-engine && tar -czf /backups/data-\$(date +\%Y\%m\%d).tar.gz data/" | crontab -
+echo "0 2 * * * cd /opt/LinkingMem && tar -czf /backups/data-\$(date +\%Y\%m\%d).tar.gz data/" | crontab -
 
 # Restore
 docker compose down

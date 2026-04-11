@@ -13,21 +13,21 @@
 #             Convenient for local dev or single-host deployments.
 #
 # Build:
-#   docker build --target engine -t ai-graph-engine:engine .
-#   docker build --target full   -t ai-graph-engine:full   .
+#   docker build --target engine -t LinkingMem:engine .
+#   docker build --target full   -t LinkingMem:full   .
 #   docker build --target full   --build-arg EMBED_MODEL=BAAI/bge-m3 \
-#                                -t ai-graph-engine:full-bge .
+#                                -t LinkingMem:full-bge .
 #
 # Run (all env vars passed at runtime — no secrets baked in):
 #   docker run -p 8000:8000 \
 #     -v $(pwd)/data:/data \
 #     --env-file .env \
-#     ai-graph-engine:engine
+#     LinkingMem:engine
 #
 #   docker run -p 8000:8000 \
 #     -v $(pwd)/data:/data \
 #     --env-file .env \
-#     ai-graph-engine:full
+#     LinkingMem:full
 # ══════════════════════════════════════════════════════════════════════════════
 
 

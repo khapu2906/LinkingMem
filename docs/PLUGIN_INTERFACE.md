@@ -26,7 +26,7 @@ Requests:  same HTTP format, host header is ignored
 Configure in `plugins.toml`:
 ```toml
 [embed_text]
-socket = "/tmp/ai-graph-engine-embed.sock"   # unix socket — auth is skipped entirely
+socket = "/tmp/LinkingMem-embed.sock"   # unix socket — auth is skipped entirely
 
 [generate]
 url        = "http://localhost:8002"

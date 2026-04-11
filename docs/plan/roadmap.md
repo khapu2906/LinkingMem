@@ -43,7 +43,7 @@ Targets: easier debugging, better introspection, smoother onboarding.
 - [ ] **Query explain** — `POST /query/explain` returns scoring breakdown per node without calling the LLM
 - [ ] **Graph diff** — `GET /graph/diff?since=<timestamp>` shows what changed since a given time
 - [ ] **Plugin `/info` standardized** — engine surfaces plugin metadata at `GET /plugin/info`
-- [ ] **CLI tool** — `ai-graph-engine ingest`, `query`, `export` as a standalone binary
+- [ ] **CLI tool** — `LinkingMem ingest`, `query`, `export` as a standalone binary
 - [ ] **OpenAPI spec** — auto-generated from axum handlers
 
 ---
@@ -95,7 +95,7 @@ Targets: stable API, enterprise-grade reliability.
 - [ ] **WAL streaming** — push WAL entries to replicas in real time (sub-second replica lag)
 - [ ] **Horizontal sharding** — partition graph across instances by entity type or ID range
 - [ ] **Backup API** — `POST /backup` triggers an atomic snapshot to a configured destination
-- [ ] **Migration tool** — `ai-graph-engine migrate` for schema/format upgrades between versions
+- [ ] **Migration tool** — `LinkingMem migrate` for schema/format upgrades between versions
 
 ---
 
