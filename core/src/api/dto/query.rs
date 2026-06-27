@@ -137,6 +137,27 @@ pub struct QueryNodeReq {
     pub response: Option<ResponseProfile>,
 }
 
+/// POST /query/image — query by image URL; engine embeds the image via plugin.
+#[derive(Deserialize, Validate)]
+pub struct QueryImageReq {
+    /// URL or base64 data-URI of the query image.
+    #[validate(length(min = 1, max = 4_096, message = "image_url must be 1–4096 characters"))]
+    pub image_url: String,
+
+    #[serde(default)]
+    pub pipeline: Option<PipelineControl>,
+
+    #[validate(custom(function = "validate_mode"))]
+    #[serde(default)]
+    pub mode: Option<String>,
+
+    #[serde(default)]
+    pub options: Option<QueryOptions>,
+
+    #[serde(default)]
+    pub response: Option<ResponseProfile>,
+}
+
 // ── legacy request (kept for backward compat on POST /query) ──────────────────
 
 #[derive(Deserialize, Validate)]

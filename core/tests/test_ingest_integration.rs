@@ -127,7 +127,7 @@ async fn delta_store_ingest_and_merge_flow() {
     })).unwrap();
     let base = Arc::new(base);
 
-    delta.add_node(NodeInfo { id: 2, name: "NewNode".into(), node_type: "Concept".into(), weight: 0.0, props: Value::Null, full_context: String::new(), embed_context: None },
+    delta.add_node(NodeInfo { id: 2, name: "NewNode".into(), node_type: "Concept".into(), weight: 0.0, props: Value::Null, full_context: String::new(), embed_context: None, external_id: "Concept:NewNode".into(), image_url: None },
         { let mut v = vec![0.0f32; 8]; v[2] = 1.0; normalise(&mut v); v });
 
     assert_eq!(delta.size(), 1);

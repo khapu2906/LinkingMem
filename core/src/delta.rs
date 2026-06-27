@@ -18,7 +18,7 @@ use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, Write};
 use std::sync::{Arc, Mutex, RwLock};
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use anyhow::Result;
 use fs2::FileExt;
 
@@ -117,6 +117,8 @@ pub struct DeltaStore {
     /// Monotonically increasing 24-bit local counter.
     /// Initialised at boot from: max(graph_nodes, instance_id<<24) + replayed.
     next_node_id: AtomicU32,
+    /// Monotonically increasing edge ID counter — global across instances.
+    next_edge_id: AtomicU64,
 }
 
 impl DeltaStore {
@@ -137,6 +139,7 @@ impl DeltaStore {
             wal: Mutex::new(None),
             instance_id,
             next_node_id: AtomicU32::new(instance_id << 24),
+            next_edge_id: AtomicU64::new(0),
         }
     }
 
@@ -150,6 +153,11 @@ impl DeltaStore {
         let instance_floor = self.instance_id << 24;
         let start = std::cmp::max(base, instance_floor);
         self.next_node_id.store(start, Ordering::SeqCst);
+    }
+
+    /// Allocate a unique edge ID. Monotonically increasing, never reused within a process lifetime.
+    pub fn alloc_edge_id(&self) -> u64 {
+        self.next_edge_id.fetch_add(1, Ordering::SeqCst)
     }
 
     /// Allocate a node ID within this instance's partition.
@@ -456,11 +464,18 @@ impl DeltaStore {
             .map(|id| store.get(id).to_vec())
             .collect();
 
-        // merge nodes — assign new numeric ids starting after existing ones
+        // merge nodes — assign new sequential CSR indices starting after existing ones.
+        // Build a remap of old delta IDs → new CSR indices so edge from/to can be fixed.
+        // This is critical for distributed mode where alloc_node_id() returns instance-partitioned
+        // IDs (e.g. 16_777_216 for instance 1) that differ from the final sequential indices.
         let base_count = base_graph.num_nodes() as u32;
+        let mut delta_id_remap: std::collections::HashMap<u32, u32> =
+            std::collections::HashMap::with_capacity(delta.new_nodes.len());
         let mut merged_nodes: Vec<NodeInfo> = base_graph.nodes.clone();
         for (i, mut node) in delta.new_nodes.into_iter().enumerate() {
-            node.id = base_count + i as u32;
+            let new_csr_index = base_count + i as u32;
+            delta_id_remap.insert(node.id, new_csr_index);
+            node.id = new_csr_index;
             merged_nodes.push(node);
         }
         all_node_vecs.extend(delta.new_vecs);
@@ -479,14 +494,17 @@ impl DeltaStore {
                 (vec![], vec![])
             };
 
-        // merge edges — reconstruct from CSR (with full_context) + append delta
+        // merge edges — reconstruct from CSR (with full_context) + append delta.
+        // Remap from/to for delta edges that reference old delta node IDs (not final CSR indices).
         let mut all_edges: Vec<EdgeInfo> = base_graph.all_edges();
 
-        for (edge, vec) in delta.new_edges.iter().zip(delta.new_edge_vecs.iter()) {
+        for (mut edge, vec) in delta.new_edges.into_iter().zip(delta.new_edge_vecs.into_iter()) {
+            if let Some(&new_from) = delta_id_remap.get(&edge.from) { edge.from = new_from; }
+            if let Some(&new_to)   = delta_id_remap.get(&edge.to)   { edge.to   = new_to;   }
             all_edge_endpoints.push((edge.from, edge.to));
-            all_edge_vecs.push(vec.clone());
+            all_edge_vecs.push(vec);
+            all_edges.push(edge);
         }
-        all_edges.extend(delta.new_edges);
 
         let new_graph = CsrGraph::build(merged_nodes, &all_edges);
 

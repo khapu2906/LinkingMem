@@ -1,0 +1,42 @@
+[project]
+name = "LinkingMem-image-plugin"
+version = "0.1.0"
+description = "Image plugin for AI Graph Engine — store images locally, embed via Vision LLM"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi==0.115.0",
+    "uvicorn[standard]==0.30.6",
+    "pydantic==2.9.0",
+    "httpx>=0.27",
+    "sentence-transformers==3.1.1",
+    # CPU-only torch — sufficient for local embedding
+    "torch==2.4.1",
+    "numpy==1.26.4",
+    # LLM providers for Vision captioning — install the one you use
+    "google-genai>=1.0.0",          # IMAGE_CAPTION_MODEL=google/... (default)
+    # "openai>=1.0.0",              # IMAGE_CAPTION_MODEL=openai/...
+    # "anthropic>=0.40.0",          # IMAGE_CAPTION_MODEL=anthropic/...
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "httpx>=0.27",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths    = ["tests"]
+pythonpath   = [".."]
+
+[tool.uv]
+index-strategy = "unsafe-best-match"
+
+[[tool.uv.index]]
+name     = "pytorch-cpu"
+url      = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }

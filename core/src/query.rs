@@ -470,12 +470,14 @@ impl QueryEngine {
         let node_infos: Vec<NodeInfo> = scored.iter()
             .map(|sn| NodeInfo {
                 id:            sn.id,
+                external_id:   String::new(),
                 name:          sn.name.clone(),
                 node_type:     sn.node_type.clone(),
                 weight:        sn.score,
                 props:         sn.props.clone(),
                 full_context:  sn.full_context.clone(),
                 embed_context: None,
+                image_url:     None,
             })
             .collect();
 
@@ -534,12 +536,14 @@ impl QueryEngine {
 
         let node_infos = scored.iter().map(|sn| NodeInfo {
             id:            sn.id,
+            external_id:   String::new(),
             name:          sn.name.clone(),
             node_type:     sn.node_type.clone(),
             weight:        sn.score,
             props:         sn.props.clone(),
             full_context:  sn.full_context.clone(),
             embed_context: None,
+            image_url:     None,
         }).collect();
 
         Ok((node_infos, raw_edges))
@@ -726,9 +730,9 @@ mod tests {
     #[test]
     fn merge_context_deduplicates() {
         let make_node = |id: u32| NodeInfo {
-            id, name: id.to_string(), node_type: "T".into(),
+            id, external_id: String::new(), name: id.to_string(), node_type: "T".into(),
             weight: 0.5, props: serde_json::Value::Null,
-            full_context: String::new(), embed_context: None,
+            full_context: String::new(), embed_context: None, image_url: None,
         };
         let mut base = vec![make_node(1), make_node(2)];
         QueryEngine::merge_context(&mut base, vec![make_node(2), make_node(3)]);

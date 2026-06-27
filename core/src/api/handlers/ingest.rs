@@ -156,12 +156,18 @@ pub async fn ingest_text(
                         .map_err(|e| ApiError::Internal(e.to_string()))?;
                     to_add.push((NodeInfo {
                         id:           new_id,
+                        external_id:  if str_id.is_empty() {
+                                          format!("{}:{}", ent_type, name)
+                                      } else {
+                                          str_id.clone()
+                                      },
                         name:         name.clone(),
                         node_type:    ent_type.to_string(),
                         weight:       0.0,
                         props:        entity["props"].clone(),
                         full_context,
                         embed_context,
+                        image_url:    None,
                     }, vec));
                     new_id
                 }
@@ -201,6 +207,7 @@ pub async fn ingest_text(
                 embed_context: rel["embed_context"].as_str()
                     .filter(|s| !s.trim().is_empty())
                     .map(|s| s.to_string()),
+                edge_id:       s.delta.alloc_edge_id(),
             }, edge_vec));
         }
     }
@@ -262,33 +269,85 @@ pub async fn ingest_json(
         })));
     }
 
-    // embed nodes and edges concurrently
-    let node_embed_texts: Vec<String> = partial_graph.nodes.iter()
-        .map(|n| {
-            n.embed_context.as_deref()
-                .filter(|s| !s.is_empty())
-                .or_else(|| if n.full_context.is_empty() { None } else { Some(n.full_context.as_str()) })
-                .unwrap_or(&n.name)
-                .to_string()
-        })
-        .collect();
+    // Separate nodes into text-embeddable and image-embeddable groups.
+    // Image nodes go through /embed/image (vision → caption → embed);
+    // all others go through /embed/text in a single chunked batch.
+    let mut node_embed_texts: Vec<String>          = Vec::with_capacity(partial_graph.nodes.len());
+    let mut text_node_indices: Vec<usize>          = Vec::new();
+    let mut image_node_indices: Vec<usize>         = Vec::new();
+
+    for (i, n) in partial_graph.nodes.iter().enumerate() {
+        if n.image_url.is_some() {
+            image_node_indices.push(i);
+        } else {
+            node_embed_texts.push(
+                n.embed_context.as_deref()
+                    .filter(|s| !s.is_empty())
+                    .or_else(|| if n.full_context.is_empty() { None } else { Some(n.full_context.as_str()) })
+                    .unwrap_or(&n.name)
+                    .to_string()
+            );
+            text_node_indices.push(i);
+        }
+    }
+
     let rel_embed_texts: Vec<String> = req.relations.iter()
         .map(edge_embed_text)
         .filter(|t| !t.is_empty())
         .collect();
 
-    let (vecs_result, rel_vecs_result) = tokio::join!(
-        s.plugin.embed_chunked(node_embed_texts, EMBED_CHUNK),
+    // Embed text nodes and relations concurrently; image nodes sequentially after.
+    let (text_vecs_result, rel_vecs_result) = tokio::join!(
         async {
-            if rel_embed_texts.is_empty() {
-                Ok(vec![])
-            } else {
-                s.plugin.embed_chunked(rel_embed_texts, EMBED_CHUNK).await
-            }
+            if node_embed_texts.is_empty() { Ok(vec![]) }
+            else { s.plugin.embed_chunked(node_embed_texts, EMBED_CHUNK).await }
+        },
+        async {
+            if rel_embed_texts.is_empty() { Ok(vec![]) }
+            else { s.plugin.embed_chunked(rel_embed_texts, EMBED_CHUNK).await }
         }
     );
-    let vecs     = vecs_result    .map_err(|e| { s.metrics.ingest_failed_total.inc(); ApiError::plugin("embed", e) })?;
-    let rel_vecs = rel_vecs_result.map_err(|e| { s.metrics.ingest_failed_total.inc(); ApiError::plugin("embed relations", e) })?;
+    let text_vecs = text_vecs_result .map_err(|e| { s.metrics.ingest_failed_total.inc(); ApiError::plugin("embed", e) })?;
+    let rel_vecs  = rel_vecs_result  .map_err(|e| { s.metrics.ingest_failed_total.inc(); ApiError::plugin("embed relations", e) })?;
+
+    // If auto_store is enabled, persist each image (base64 or URL) to the image
+    // plugin before embedding. The returned stable URL replaces the original input.
+    // stored_image_urls[i] maps image_node_indices[i] → stable URL to use for embed.
+    let mut stored_image_urls: Vec<String> = Vec::with_capacity(image_node_indices.len());
+    for &ni in &image_node_indices {
+        let raw_url = partial_graph.nodes[ni].image_url.as_deref().unwrap_or("");
+        let embed_url = if s.cfg.image.auto_store {
+            match s.plugin.store_image(raw_url).await {
+                Ok(stored) => stored,
+                Err(e) => {
+                    tracing::warn!("auto_store failed for node {}: {e} — using original url", ni);
+                    raw_url.to_string()
+                }
+            }
+        } else {
+            raw_url.to_string()
+        };
+        stored_image_urls.push(embed_url);
+    }
+
+    // Embed image nodes (one request each — images aren't batchable cheaply).
+    let mut image_vecs: Vec<Vec<f32>> = Vec::with_capacity(image_node_indices.len());
+    for (slot, &ni) in image_node_indices.iter().enumerate() {
+        let _ = ni; // ni accessed via stored_image_urls[slot]
+        let url = &stored_image_urls[slot];
+        let v = s.plugin.embed_image(url).await
+            .map_err(|e| { s.metrics.ingest_failed_total.inc(); ApiError::plugin("embed_image", e) })?;
+        image_vecs.push(v);
+    }
+
+    // Merge back into a single ordered vec indexed by original node position.
+    let mut vecs: Vec<Vec<f32>> = vec![vec![]; partial_graph.nodes.len()];
+    for (slot, &ni) in text_node_indices.iter().enumerate() {
+        vecs[ni] = text_vecs.get(slot).cloned().unwrap_or_default();
+    }
+    for (slot, &ni) in image_node_indices.iter().enumerate() {
+        vecs[ni] = image_vecs.get(slot).cloned().unwrap_or_default();
+    }
 
     let res_cfg = build_resolution_cfg(&s.cfg.ingest, req.resolution.as_ref());
 
@@ -301,7 +360,7 @@ pub async fn ingest_json(
     let mut to_add:        Vec<(NodeInfo, Vec<f32>)> = Vec::new();
     let mut resolved_count = 0usize;
 
-    for (node, mut vec) in partial_graph.nodes.iter().zip(vecs) {
+    for (_current_node_idx, (node, mut vec)) in partial_graph.nodes.iter().zip(vecs).enumerate() {
         let _ = normalise(&mut vec);
 
         let resolved_id = match resolve(&node.node_type, &vec, &graph, &delta_snap, &hnsw, &res_cfg) {
@@ -320,6 +379,17 @@ pub async fn ingest_json(
                         .map_err(|e| ApiError::Internal(e.to_string()))?;
                     let mut n = node.clone();
                     n.id = new_id;
+                    if n.external_id.is_empty() {
+                        n.external_id = format!("{}:{}", n.node_type, n.name);
+                    }
+                    // Replace image_url with the stable stored URL when auto_store ran.
+                    if s.cfg.image.auto_store {
+                        if let Some(img_slot) = image_node_indices.iter().position(|&x| x == _current_node_idx) {
+                            if let Some(stable_url) = stored_image_urls.get(img_slot) {
+                                n.image_url = Some(stable_url.clone());
+                            }
+                        }
+                    }
                     to_add.push((n, vec));
                     new_id
                 }
@@ -365,6 +435,7 @@ pub async fn ingest_json(
                     embed_context: rel["embed_context"].as_str()
                         .filter(|s| !s.trim().is_empty())
                         .map(|s| s.to_string()),
+                    edge_id:       s.delta.alloc_edge_id(),
                 }, edge_vec));
             }
         }

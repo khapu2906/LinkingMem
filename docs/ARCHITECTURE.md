@@ -2,19 +2,23 @@
 
 ## 1. Overview
 
-The system is split into 2 separate processes, each doing what it does best:
+The system is split into separate processes, each doing what it does best:
 
 ```mermaid
 graph TD
     Client["Client / API"]
     Rust["🦀 Rust Engine :8000<br/>graph · vector · scoring · HTTP"]
-    Python["🐍 Python Plugin :8001<br/>embedding · extraction · generation"]
+    Text["🐍 Text Plugin :8001<br/>embedding · extraction · generation"]
+    Image["🐍 Image Plugin :8002<br/>image store · vision embed"]
 
     Client -->|HTTP| Rust
-    Rust -->|"HTTP / Unix socket"| Python
+    Rust -->|"HTTP / Unix socket"| Text
+    Rust -->|HTTP| Image
 ```
 
 **Why separate?** Rust lacks a mature AI ecosystem. Python lacks the performance required for graph/vector compute. Each side focuses on its strengths.
+
+The image plugin is optional — only required when ingesting image nodes (`image_url` set) or using `POST /query/image`.
 
 ---
 
@@ -66,19 +70,28 @@ LinkingMem/
 │           ├── server.rs        Entry point: HTTP server
 │           └── ingest.rs        CLI one-time data prep
 │
-├── plugins/                     ← Python plugin server
-│   └── text/
-│       ├── main.py              FastAPI: /health /info /embed/text /extract /generate
-│       ├── embed.py             Embedding logic (SentenceTransformers)
-│       ├── extract.py           Entity extraction (LLM)
-│       ├── generate.py          Answer generation (LLM)
-│       ├── reason.py            Reasoning utilities
-│       ├── llm.py               LLM client abstraction
-│       ├── schemas.py           Pydantic request/response schemas
-│       └── auth.py              Plugin-side auth helpers
+├── plugins/                     ← Python plugin servers
+│   ├── text/                    ← Text plugin (port 8001)
+│   │   ├── main.py              FastAPI: /health /info /embed/text /embed/image /extract /generate /reason
+│   │   ├── embed.py             Text embedding (SentenceTransformers, lazy-loaded)
+│   │   ├── embed_image.py       Image embed via Vision LLM caption → sentence-transformers
+│   │   ├── extract.py           Entity extraction (LLM)
+│   │   ├── generate.py          Answer generation (LLM)
+│   │   ├── reason.py            Multi-hop reasoning
+│   │   ├── llm.py               LLM client abstraction (OpenAI / Anthropic / Google)
+│   │   ├── schemas.py           Pydantic request/response schemas
+│   │   └── auth.py              Plugin-side Bearer auth helpers
+│   │
+│   └── image/                   ← Image plugin (port 8002)
+│       ├── main.py              FastAPI: /health /info /store /images/{file} /embed
+│       ├── store.py             POST /store + GET /images/{filename}: content-addressed local disk storage
+│       ├── embed.py             POST /embed: vision LLM caption → sentence-transformers embed
+│       ├── schemas.py           Pydantic schemas (StoreRequest/Response, EmbedRequest/Response)
+│       └── auth.py              Plugin-side Bearer auth helpers
 │
 ├── data/                        ← Binary artifacts (git-ignored)
-│   ├── nodes.json               Node metadata (id, name, type, weight, props, full_context, embed_context)
+│   ├── nodes.json               Node metadata (id, name, type, weight, props, full_context, embed_context, image_url)
+│   ├── images/                  Content-addressed image files (SHA-256 named, served at /images/{file})
 │   ├── edges.bin                CSR edge data
 │   ├── edge_types.json          Edge type mapping
 │   ├── edge_contexts.json       full_context string per edge (parallel to edges.bin)
@@ -186,6 +199,8 @@ Bidirectional: stores both forward and backward edges so BFS can traverse in bot
 Each `NodeInfo` and `EdgeInfo` has:
 - `full_context: String` — verbose description, passed to the LLM when generating an answer
 - `embed_context: Option<String>` — short dense description, used for embedding into HNSW. Falls back to `full_context`, then `name`/`edge_type` if absent.
+- `image_url: Option<String>` (NodeInfo only) — URL or base64 data-URI. When set, `/ingest/json` routes this node through `/embed/image` instead of `/embed/text`. The resulting vector lands in the same HNSW index as text nodes — no separate image index needed.
+- `external_id: String` (NodeInfo only) — stable public identifier, never reassigned at merge.
 
 ### HnswIndex (Node HNSW)
 
@@ -249,16 +264,23 @@ Caches embedding vectors of hot nodes in RAM. Avoids re-reading from mmap on eve
 
 ## 5. Plugin System
 
-A plugin is any HTTP server that implements 3 endpoints: `/embed/text`, `/extract`, `/generate`.
+A plugin is any HTTP server implementing the plugin interface. The reference setup uses two plugin processes:
 
-The Rust engine calls the plugin via `plugin.rs` — an HTTP client with a **TTL-cached health check**:
+| Plugin | Port | Endpoints |
+|--------|------|-----------|
+| Text plugin | 8001 | `POST /embed/text`, `POST /embed/image`, `POST /extract`, `POST /generate`, `POST /reason` |
+| Image plugin | 8002 | `POST /store`, `GET /images/{file}`, `POST /embed` |
+
+The Rust engine calls plugins via `plugin.rs` — an HTTP/Unix-socket client with a **TTL-cached health check**:
 - Before every request **that uses the plugin**, the engine calls `check_ready()`
 - The health result is cached for 5 seconds — avoids per-request overhead
-- `/query`: checks only when `needs_embed` (no `vector` provided) **or** `needs_generate` (`llm_generate=true`). If both are false (pre-computed vector + LLM skipped), the check is bypassed entirely — a pure graph query never returns 503
+- `/query`: checks only when `needs_embed` (no `vector` provided) **or** `needs_generate` (`llm_generate=true`). A pure graph query (`vector` + `llm_generate=false`) never returns 503
 - `/ingest/text`, `/ingest/json`: always checks because embed is always called
 - If the plugin is not ready → immediately return **HTTP 503**, without attempting to call the plugin
 
-All 3 operations can point to the same server or to 3 different servers, configured in `plugins.toml`.
+Each endpoint (embed_text, embed_image, image_store, extract, generate) can point to a different server or socket, configured independently in `plugins.toml`. The image plugin endpoints default to `http://localhost:8002`.
+
+**Image auto-store**: when `[image] auto_store = true`, `ingest_json` calls the image plugin's `/store` before `/embed/image`. The stored stable URL (`/images/<sha256>.<ext>`) replaces the original `image_url` on the node, so the graph never stores ephemeral base64 blobs or URLs that might change. Falls back to the original URL if the store call fails.
 
 See details: [`docs/PLUGIN_INTERFACE.md`](PLUGIN_INTERFACE.md)
 
@@ -292,7 +314,7 @@ In-flight queries hold an `Arc` reference to the old graph — they are never in
 
 | File | Format | Description |
 |---|---|---|
-| `nodes.json` | JSON array | Node metadata (id, name, type, props, weight, full_context, embed_context) |
+| `nodes.json` | JSON array | Node metadata (id, name, type, props, weight, full_context, embed_context, external_id, image_url) |
 | `edges.bin` | Binary CSR | offsets + edges + weights + edge_type indices |
 | `edge_types.json` | JSON array | String labels for edge types |
 | `edge_contexts.json` | JSON array | full_context string per edge, parallel to edges.bin |

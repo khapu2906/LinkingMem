@@ -3,11 +3,12 @@ use axum_valid::Valid;
 
 use crate::{
     api::{
-        dto::query::{QueryMultihopReq, QueryNodeReq, QueryReq, QueryResponse, QueryTextReq, QueryVectorReq},
+        dto::query::{QueryImageReq, QueryMultihopReq, QueryNodeReq, QueryReq, QueryResponse, QueryTextReq, QueryVectorReq},
         ApiError,
     },
     app_state::AppState,
     query::{QueryOptions, QueryResult, ScoringWeights},
+    vector::hnsw::normalise,
 };
 
 // ── shared helpers ────────────────────────────────────────────────────────────
@@ -221,6 +222,57 @@ pub async fn handle_query(
         s.metrics.queries_failed_total.inc();
         ApiError::Internal(format!("query failed: {e}"))
     })?;
+
+    record_metrics(&s, t, &result);
+    let profile = req.response.unwrap_or_default();
+    Ok((StatusCode::OK, Json(QueryResponse::from_result(result, &profile))))
+}
+
+// ── POST /query/image ─────────────────────────────────────────────────────────
+
+/// Query the graph using an image as input.
+/// The plugin generates a caption via Vision LLM, embeds it in the shared
+/// text vector space, then runs the standard HNSW → BFS → score → LLM pipeline.
+pub async fn handle_query_image(
+    State(s): State<AppState>,
+    Valid(Json(req)): Valid<Json<QueryImageReq>>,
+) -> Result<impl IntoResponse, ApiError> {
+    let t = std::time::Instant::now();
+    s.metrics.queries_total.inc();
+
+    if !s.plugin.check_ready().await {
+        s.metrics.queries_failed_total.inc();
+        return Err(ApiError::ServiceUnavailable("plugin not available".into()));
+    }
+
+    let mut vec = s.plugin.embed_image(&req.image_url).await.map_err(|e| {
+        s.metrics.queries_failed_total.inc();
+        ApiError::plugin("embed_image", e)
+    })?;
+    let _ = normalise(&mut vec);
+
+    let llm_generate = req.pipeline.as_ref().map_or(true, |p| p.llm_generate);
+    let prompt       = req.pipeline.as_ref().and_then(|p| p.prompt.clone()).unwrap_or_default();
+    let hints        = req.pipeline.as_ref().and_then(|p| p.hints.clone());
+
+    let (weights, bidirectional) = resolve_weights(req.mode.as_deref());
+    let qcfg = &s.cfg.query;
+    let opts = req.options.unwrap_or(QueryOptions {
+        weights,
+        bidirectional,
+        hnsw_k:            qcfg.hnsw_k,
+        bfs_depth:         qcfg.bfs_depth,
+        bfs_max_nodes:     qcfg.bfs_max_nodes,
+        context_top_n:     qcfg.context_top_n,
+        context_min_score: qcfg.context_min_score,
+    });
+
+    let result = s.engine.query_with_vector(vec, &prompt, opts, llm_generate, hints)
+        .await
+        .map_err(|e| {
+            s.metrics.queries_failed_total.inc();
+            ApiError::Internal(format!("query failed: {e}"))
+        })?;
 
     record_metrics(&s, t, &result);
     let profile = req.response.unwrap_or_default();

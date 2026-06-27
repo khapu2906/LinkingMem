@@ -7,7 +7,7 @@ use ai_graph_engine::{
         admin::{force_merge, get_node, graph_stats, health, metrics_endpoint, search_nodes, search_edges},
         export::{handle_export_graph, handle_export_graph_post, handle_import_json, handle_import_multipart},
         ingest::{ingest_json, ingest_text},
-        query::{handle_query, handle_query_text, handle_query_vector, handle_query_node, handle_query_multihop},
+        query::{handle_query, handle_query_image, handle_query_text, handle_query_vector, handle_query_node, handle_query_multihop},
     },
     app_state::{boot, run_merge, AppState},
     config::AppConfig,
@@ -36,6 +36,7 @@ fn build_router(state: AppState, auth: AuthState, public_rl: PublicRateLimitStat
         .route("/query/text",   post(handle_query_text))
         .route("/query/vector", post(handle_query_vector))
         .route("/query/node",      post(handle_query_node))
+        .route("/query/image",     post(handle_query_image))
         .route("/query/multihop",  post(handle_query_multihop))
         .route("/ingest/text",  post(ingest_text))
         .route("/ingest/json", post(ingest_json))

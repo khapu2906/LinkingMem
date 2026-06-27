@@ -30,6 +30,17 @@ class EmbedResponse(BaseModel):
     model: str
 
 
+class EmbedImageRequest(BaseModel):
+    image_url: str  # http/https URL or base64 data-URI
+
+
+class EmbedImageResponse(BaseModel):
+    vector: list[float]
+    dim: int
+    caption: str   # generated caption, useful for debugging
+    model: str
+
+
 class ExtractRequest(BaseModel):
     text: str
     hints: LlmHints = LlmHints()

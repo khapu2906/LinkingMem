@@ -4,13 +4,13 @@
 use ai_graph_engine::graph::csr::{CsrGraph, EdgeInfo, NodeInfo};
 
 fn node(id: u32) -> NodeInfo {
-    NodeInfo { id, name: format!("node_{id}"), node_type: "Entity".into(), weight: 0.0, props: serde_json::Value::Null, full_context: String::new(), embed_context: None }
+    NodeInfo { id, name: format!("node_{id}"), node_type: "Entity".into(), weight: 0.0, props: serde_json::Value::Null, full_context: String::new(), embed_context: None, external_id: format!("node_{id}"), image_url: None }
 }
 fn edge(from: u32, to: u32) -> EdgeInfo {
-    EdgeInfo { from, to, edge_type: "rel".into(), weight: 1.0, full_context: String::new(), embed_context: None }
+    EdgeInfo { from, to, edge_type: "rel".into(), weight: 1.0, full_context: String::new(), embed_context: None, edge_id: 0 }
 }
 fn wedge(from: u32, to: u32, w: f32) -> EdgeInfo {
-    EdgeInfo { from, to, edge_type: "rel".into(), weight: w, full_context: String::new(), embed_context: None }
+    EdgeInfo { from, to, edge_type: "rel".into(), weight: w, full_context: String::new(), embed_context: None, edge_id: 0 }
 }
 
 /// Graph:  0 → 1 (w=1.0), 0 → 2 (w=0.5)

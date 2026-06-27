@@ -14,10 +14,11 @@ Set `API_KEYS` env var (comma-separated). If not set → auth disabled (dev mode
 | POST | `/query/text` | Required | Text query: embed → HNSW → BFS → score → LLM |
 | POST | `/query/vector` | Required | Vector query: HNSW → BFS → score → [LLM], embed step skipped |
 | POST | `/query/node` | Required | Node query: BFS from node_id → score → [LLM], no HNSW |
+| POST | `/query/image` | Required | Image query: vision caption → embed → HNSW → BFS → score → LLM |
 | POST | `/query/multihop` | Required | Multi-hop reasoning: iterative graph expansion until LLM has enough context |
 | POST | `/query` | Required | Legacy — selects text or vector mode based on fields present |
 | POST | `/ingest/text` | Required | LLM entity extraction from raw text, then ingest |
-| POST | `/ingest/json` | Required | Ingest pre-structured entities + relations |
+| POST | `/ingest/json` | Required | Ingest pre-structured entities + relations (supports image nodes via `image_url`) |
 | POST | `/delta/merge` | Required | Force immediate graph rebuild |
 | GET | `/health` | Public | Liveness check + summary |
 | GET | `/metrics` | Public | Prometheus text format |
@@ -33,6 +34,7 @@ Set `API_KEYS` env var (comma-separated). If not set → auth disabled (dev mode
 | `/query/text` | Client sends a query string; engine handles embedding |
 | `/query/vector` | Client already has an embedding (batch pipelines, vector reuse) |
 | `/query/node` | Client knows a specific node_id and wants to explore its neighbourhood |
+| `/query/image` | Client has an image (URL or base64) and wants to search the graph by its visual content |
 | `/query/multihop` | Query may require following multiple entity relationships to answer |
 | `/query` (legacy) | Backward compat — equivalent to `/query/text` or `/query/vector` |
 
@@ -138,6 +140,42 @@ The seed node is assigned `vector_sim=1.0`. Expanded nodes are scored by proximi
 { "error": "node 999 not found", "code": "not_found" }
 ```
 HTTP 404 if `node_id` does not exist.
+
+---
+
+## POST /query/image
+
+Query the graph from an image input. The image plugin generates a text caption via Vision LLM, embeds it in the shared vector space, then runs the standard HNSW → BFS → score → LLM pipeline.
+
+This enables cross-modal search: "find nodes related to this photo" returns the same result format as `/query/text`.
+
+### Request
+
+```json
+{
+  "image_url": "https://example.com/product.jpg",
+  "pipeline": { "llm_generate": true },
+  "mode": "semantic",
+  "response": "standard",
+  "options": {
+    "hnsw_k": 20,
+    "bfs_depth": 2
+  }
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `image_url` | string | **yes** | `http(s)://` URL or `data:<mime>;base64,<payload>` data-URI. Max 4096 characters |
+| `pipeline.llm_generate` | bool | no | Default: `true` |
+| `pipeline.hints` | object | no | Per-request LLM customization — see [LlmHints](#llmhints) |
+| `mode` | string | no | Scoring preset |
+| `response` | string | no | Verbosity: `minimal` `standard` `full` |
+| `options` | object | no | Fine-grained pipeline override |
+
+Response format is identical to `/query/text`.
+
+Requires the **image plugin** to be running (default: `http://localhost:8002`) and configured at `[plugins.embed_image]` in `plugins.toml`.
 
 ---
 
@@ -391,6 +429,14 @@ Ingest pre-structured entities + relations directly (no LLM extraction).
       "props": {},
       "full_context":  "Acme Corp is a technology company based in Silicon Valley, founded in 2010.",
       "embed_context": "Acme Corp, Silicon Valley tech company"
+    },
+    {
+      "id": "e3",
+      "name": "Office photo",
+      "type": "Image",
+      "props": {},
+      "full_context":  "A photo of the Acme Corp main office.",
+      "image_url": "https://example.com/office.jpg"
     }
   ],
   "relations": [
@@ -419,6 +465,7 @@ Ingest pre-structured entities + relations directly (no LLM extraction).
 | `entities[].props` | object | yes | Metadata; use `{}` if none |
 | `entities[].full_context` | string | no | Verbose description — included in LLM context when generating answers |
 | `entities[].embed_context` | string | no | Short dense text for NodeHnswIndex embedding. Falls back to `full_context` then `name` |
+| `entities[].image_url` | string | no | `http(s)://` URL or `data:<mime>;base64,...` URI. When present, the engine calls `/embed/image` (Vision LLM caption → embed) instead of `/embed/text` for this node. The resulting vector lives in the same space as text nodes. |
 | `relations` | array | yes | List of relations |
 | `relations[].from` | string | yes | Source entity ID |
 | `relations[].to` | string | yes | Target entity ID |
@@ -427,6 +474,8 @@ Ingest pre-structured entities + relations directly (no LLM extraction).
 | `relations[].full_context` | string | no | Verbose description of the relation — included in LLM context |
 | `relations[].embed_context` | string | no | Short dense text for EdgeHnswIndex embedding. Falls back to `full_context` then `type` |
 | `resolution` | object | no | Same as `/ingest/text` |
+
+**Image node auto-store**: when `[image] auto_store = true` in `plugins.toml` (or `IMAGE_AUTO_STORE=true`), the engine sends the image to the image plugin's `/store` endpoint before embedding. The stored stable URL replaces `image_url` on the node — external URLs and raw base64 blobs are both converted to permanent `http://localhost:8002/images/<sha256>.<ext>` URLs. When `auto_store = false` (default), the original URL or data-URI is used directly for embedding without being persisted.
 
 ### Response
 

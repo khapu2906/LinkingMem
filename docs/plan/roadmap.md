@@ -38,6 +38,9 @@ Core engine, fully functional for single-node deployments.
 
 Targets: easier debugging, better introspection, smoother onboarding.
 
+- [x] **Stable `external_id` on nodes** — user-provided or auto-generated, never reassigned at merge. `CsrGraph::get_by_external_id()` for O(1) lookup. *(prerequisite — shipped first)*
+- [x] **Monotonic `edge_id` on edges** — `DeltaStore::alloc_edge_id()`, persisted as `edge_ids.json`. *(prerequisite)*
+- [x] **Fix distributed merge ID corruption** — `merge_into()` remaps delta edge `from`/`to` to new CSR indices before building CSR. *(prerequisite)*
 - [ ] **Structured logging** — JSON log output (`RUST_LOG_FORMAT=json`) for log aggregators
 - [ ] **Request tracing** — trace ID propagated from API through plugin calls, visible in response headers
 - [ ] **Query explain** — `POST /query/explain` returns scoring breakdown per node without calling the LLM

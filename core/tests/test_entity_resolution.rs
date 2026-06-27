@@ -23,12 +23,14 @@ fn unit_vec(hot: usize) -> Vec<f32> {
 fn make_node(id: u32, name: &str, node_type: &str) -> NodeInfo {
     NodeInfo {
         id,
+        external_id:   format!("{node_type}:{name}"),
         name:          name.into(),
         node_type:     node_type.into(),
         weight:        0.0,
         props:         Value::Null,
         full_context:  String::new(),
         embed_context: None,
+        image_url:     None,
     }
 }
 

@@ -19,7 +19,7 @@ mod delta_tests {
     use tempfile::tempdir;
 
     fn node(id: u32, name: &str) -> NodeInfo {
-        NodeInfo { id, name: name.into(), node_type: "Entity".into(), weight: 0.0, props: serde_json::Value::Null, full_context: String::new(), embed_context: None }
+        NodeInfo { id, external_id: format!("Entity:{name}"), name: name.into(), node_type: "Entity".into(), weight: 0.0, props: serde_json::Value::Null, full_context: String::new(), embed_context: None, image_url: None }
     }
 
     fn unit_vec(seed: usize, dim: usize) -> Vec<f32> {
@@ -61,7 +61,7 @@ mod delta_tests {
     #[test]
     fn add_edge_increments_size() {
         let d = DeltaStore::new("/tmp".into(), 100);
-        d.add_edge(EdgeInfo { from: 0, to: 1, edge_type: "r".into(), weight: 1.0, full_context: String::new(), embed_context: None }, vec![]);
+        d.add_edge(EdgeInfo { from: 0, to: 1, edge_type: "r".into(), weight: 1.0, full_context: String::new(), embed_context: None, edge_id: 0 }, vec![]);
         assert_eq!(d.size(), 1);
     }
 
@@ -78,8 +78,8 @@ mod delta_tests {
     #[test]
     fn delta_neighbors_returned() {
         let d = DeltaStore::new("/tmp".into(), 100);
-        d.add_edge(EdgeInfo { from: 5, to: 9, edge_type: "x".into(), weight: 0.5, full_context: String::new(), embed_context: None }, vec![]);
-        d.add_edge(EdgeInfo { from: 5, to: 7, edge_type: "x".into(), weight: 0.8, full_context: String::new(), embed_context: None }, vec![]);
+        d.add_edge(EdgeInfo { from: 5, to: 9, edge_type: "x".into(), weight: 0.5, full_context: String::new(), embed_context: None, edge_id: 0 }, vec![]);
+        d.add_edge(EdgeInfo { from: 5, to: 7, edge_type: "x".into(), weight: 0.8, full_context: String::new(), embed_context: None, edge_id: 0 }, vec![]);
         let nb = d.read().neighbors(5).to_vec();
         assert_eq!(nb.len(), 2);
         assert!(nb.iter().any(|(to, _)| *to == 9));
@@ -123,8 +123,8 @@ mod delta_tests {
 
         {
             let d = DeltaStore::new(path.clone(), 100);
-            d.add_edge(EdgeInfo { from: 0, to: 1, edge_type: "r".into(), weight: 0.7, full_context: String::new(), embed_context: None }, vec![]);
-            d.add_edge(EdgeInfo { from: 1, to: 2, edge_type: "r".into(), weight: 0.5, full_context: String::new(), embed_context: None }, vec![]);
+            d.add_edge(EdgeInfo { from: 0, to: 1, edge_type: "r".into(), weight: 0.7, full_context: String::new(), embed_context: None, edge_id: 0 }, vec![]);
+            d.add_edge(EdgeInfo { from: 1, to: 2, edge_type: "r".into(), weight: 0.5, full_context: String::new(), embed_context: None, edge_id: 0 }, vec![]);
         }
 
         let d2 = DeltaStore::new(path, 100);
@@ -166,7 +166,7 @@ mod delta_tests {
 
         d.add_node(node(2, "C"), unit_vec(2, 8));
         d.add_node(node(3, "D"), unit_vec(3, 8));
-        d.add_edge(EdgeInfo { from: 2, to: 3, edge_type: "r".into(), weight: 1.0, full_context: String::new(), embed_context: None }, vec![]);
+        d.add_edge(EdgeInfo { from: 2, to: 3, edge_type: "r".into(), weight: 1.0, full_context: String::new(), embed_context: None, edge_id: 0 }, vec![]);
 
         let storage = LocalStorage::new(dir.path().to_path_buf());
         let (merged, vecs, _, _) = d.merge_into(base, &storage).await.unwrap();

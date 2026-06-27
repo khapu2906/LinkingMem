@@ -1,6 +1,6 @@
 
 <div align="center">
-  <img src="https://github.com/khapu2906/LinkingMem/blob/main/assets/logo.png?raw=true" alt="LinkingMem" width="200" />
+  <img src="https://github.com/khapu2906/jet/blob/main/assets/logo.png?raw=true" alt="Jet" width="200" />
 </div>
 
 # LinkingMem — Graph-native RAG Engine
@@ -517,3 +517,4 @@ auth_token = "my-secret"          # Bearer token for HTTP endpoints
 | 9     | ✅     | Unix socket transport for plugins (hyper direct)  |
 | 10    | ✅     | Multi-hop reasoning (`/query/multihop`, `/reason`)|
 | 11    | ✅     | Distributed ingest (fs2 WAL locking, instance IDs)|
+| 12    | ✅     | `external_id` stable node ID + edge_id + distributed merge fix |

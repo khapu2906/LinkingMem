@@ -61,6 +61,7 @@ async fn collect_export_data(s: &AppState) -> (Vec<ExportNode>, Vec<ExportEdge>)
             props: n.props.clone(),
             full_context: n.full_context.clone(),
             embed_context: n.embed_context.clone(),
+            image_url: n.image_url.clone(),
         })
         .collect();
 
@@ -103,6 +104,7 @@ async fn collect_export_data(s: &AppState) -> (Vec<ExportNode>, Vec<ExportEdge>)
                 props: n.props.clone(),
                 full_context: n.full_context.clone(),
                 embed_context: n.embed_context.clone(),
+                image_url: n.image_url.clone(),
             });
         }
 
@@ -255,6 +257,7 @@ fn export_ndjson(nodes: Vec<ExportNode>, edges: Vec<ExportEdge>, exported_at: St
             props: n.props,
             full_context: n.full_context,
             embed_context: n.embed_context,
+            image_url: n.image_url,
         };
         if let Ok(s) = serde_json::to_string(&line) {
             lines.push(s);
@@ -386,8 +389,8 @@ fn parse_ndjson(text: &str) -> Result<GraphExport, String> {
                 version = v;
                 exported_at = ea;
             }
-            NdjsonLine::Node { name, node_type, props, full_context, embed_context } => {
-                nodes.push(ExportNode { name, node_type, props, full_context, embed_context });
+            NdjsonLine::Node { name, node_type, props, full_context, embed_context, image_url } => {
+                nodes.push(ExportNode { name, node_type, props, full_context, embed_context, image_url });
             }
             NdjsonLine::Edge { from, to, edge_type, weight, full_context, embed_context } => {
                 edges.push(ExportEdge { from, to, edge_type, weight, full_context, embed_context });
@@ -438,12 +441,14 @@ async fn apply_import(s: AppState, payload: GraphExport) -> impl IntoResponse {
         };
         let info = NodeInfo {
             id,
+            external_id: format!("{}:{}", n.node_type, n.name),
             name: n.name.clone(),
             node_type: n.node_type,
             weight: 0.0,
             props: n.props,
             full_context: n.full_context,
             embed_context: n.embed_context,
+            image_url: n.image_url,
         };
         s.delta.add_node(info, vec![]);
         name_to_id.insert(n.name, id);
@@ -467,6 +472,7 @@ async fn apply_import(s: AppState, payload: GraphExport) -> impl IntoResponse {
             weight: e.weight,
             full_context: e.full_context,
             embed_context: e.embed_context,
+            edge_id: 0,
         };
         s.delta.add_edge(info, vec![]);
         edges_added += 1;

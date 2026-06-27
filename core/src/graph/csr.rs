@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 /// Node metadata stored alongside the graph structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -18,6 +18,15 @@ pub struct NodeInfo {
     /// Falls back to `full_context` (if non-empty) then `name` when absent.
     #[serde(default)]
     pub embed_context: Option<String>,
+    /// Stable public identifier set at ingest time, never reassigned at merge.
+    /// User-provided string ID, or auto-generated as "{node_type}:{name}".
+    /// Empty string for nodes loaded from pre-v0.2.0 snapshots.
+    #[serde(default)]
+    pub external_id: String,
+    /// URL or base64 data-URI of the image associated with this node.
+    /// When set, the engine calls /embed/image instead of /embed/text at ingest time.
+    #[serde(default)]
+    pub image_url: Option<String>,
 }
 
 /// Edge with optional weight/type
@@ -34,6 +43,9 @@ pub struct EdgeInfo {
     /// Falls back to `full_context` (if non-empty) then `edge_type` when absent.
     #[serde(default)]
     pub embed_context: Option<String>,
+    /// Monotonic edge ID allocated at ingest time. 0 for edges from pre-v0.2.0 snapshots.
+    #[serde(default)]
+    pub edge_id: u64,
 }
 
 /// Compressed Sparse Row graph.
@@ -63,6 +75,9 @@ pub struct CsrGraph {
     rev_offsets: Vec<u32>,
     /// packed in-neighbor ids (reverse direction)
     rev_edges: Vec<u32>,
+    /// Maps external_id → CSR array index for stable node lookups.
+    /// Built from NodeInfo.external_id during build(). Only non-empty external_ids are indexed.
+    pub external_id_index: HashMap<String, u32>,
 }
 
 impl CsrGraph {
@@ -133,7 +148,12 @@ impl CsrGraph {
             node.weight = (out_degree[i] + in_degree[i]) as f32 / max_combined;
         }
 
-        Self { offsets, edges, nodes, edge_weights, edge_types, edge_full_contexts, edge_embed_contexts, rev_offsets, rev_edges }
+        let external_id_index: HashMap<String, u32> = nodes.iter()
+            .filter(|n| !n.external_id.is_empty())
+            .map(|n| (n.external_id.clone(), n.id))
+            .collect();
+
+        Self { offsets, edges, nodes, edge_weights, edge_types, edge_full_contexts, edge_embed_contexts, rev_offsets, rev_edges, external_id_index }
     }
 
     /// O(1) slice of out-neighbors — no allocation, cache-friendly.
@@ -200,6 +220,7 @@ impl CsrGraph {
                     edge_type:     types[i].clone(),
                     full_context:  full_ctxs[i].clone(),
                     embed_context: embed_ctxs.get(i).cloned().unwrap_or(None),
+                    edge_id:       0,
                 });
             }
         }
@@ -219,6 +240,11 @@ impl CsrGraph {
 
     pub fn num_nodes(&self) -> usize { self.nodes.len() }
     pub fn num_edges(&self) -> usize { self.edges.len() }
+
+    /// Look up a node's CSR index by its stable external_id.
+    pub fn get_by_external_id(&self, external_id: &str) -> Option<u32> {
+        self.external_id_index.get(external_id).copied()
+    }
 
     /// Returns all edges (from, to, weight, edge_type) where both endpoints are in `node_ids`.
     /// Deduplicates by (from, to) pair — keeps the highest-weight edge when duplicates exist.
@@ -313,15 +339,17 @@ mod tests {
                 props:        serde_json::Value::Null,
                 full_context:  String::new(),
                 embed_context: None,
+                external_id:   format!("node_{}", i),
+                image_url:     None,
             })
             .collect();
 
         let edges = vec![
-            EdgeInfo { from: 0, to: 1, edge_type: "rel".into(), weight: 1.0, full_context: String::new(), embed_context: None },
-            EdgeInfo { from: 0, to: 2, edge_type: "rel".into(), weight: 0.5, full_context: String::new(), embed_context: None },
-            EdgeInfo { from: 1, to: 3, edge_type: "rel".into(), weight: 0.8, full_context: String::new(), embed_context: None },
-            EdgeInfo { from: 2, to: 4, edge_type: "rel".into(), weight: 0.6, full_context: String::new(), embed_context: None },
-            EdgeInfo { from: 3, to: 4, edge_type: "rel".into(), weight: 1.0, full_context: String::new(), embed_context: None },
+            EdgeInfo { from: 0, to: 1, edge_type: "rel".into(), weight: 1.0, full_context: String::new(), embed_context: None, edge_id: 0 },
+            EdgeInfo { from: 0, to: 2, edge_type: "rel".into(), weight: 0.5, full_context: String::new(), embed_context: None, edge_id: 1 },
+            EdgeInfo { from: 1, to: 3, edge_type: "rel".into(), weight: 0.8, full_context: String::new(), embed_context: None, edge_id: 2 },
+            EdgeInfo { from: 2, to: 4, edge_type: "rel".into(), weight: 0.6, full_context: String::new(), embed_context: None, edge_id: 3 },
+            EdgeInfo { from: 3, to: 4, edge_type: "rel".into(), weight: 1.0, full_context: String::new(), embed_context: None, edge_id: 4 },
         ];
 
         CsrGraph::build(nodes, &edges)

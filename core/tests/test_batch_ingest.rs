@@ -19,12 +19,14 @@ use ai_graph_engine::{
 fn make_node(id: u32, name: &str) -> NodeInfo {
     NodeInfo {
         id,
+        external_id:   format!("Person:{name}"),
         name:          name.into(),
         node_type:     "Person".into(),
         weight:        0.0,
         props:         Value::Null,
         full_context:  String::new(),
         embed_context: None,
+        image_url:     None,
     }
 }
 
@@ -36,6 +38,7 @@ fn make_edge(from: u32, to: u32) -> EdgeInfo {
         weight:        1.0,
         full_context:  String::new(),
         embed_context: None,
+        edge_id:       0,
     }
 }
 

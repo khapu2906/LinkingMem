@@ -15,6 +15,8 @@ from fastapi import FastAPI
 from .auth import PLUGIN_AUTH_TOKEN
 from .embed import _EMBED_MODEL, EMBED_MODELS, warmup
 from .embed import router as embed_router
+from .embed_image import _IMAGE_CAPTION_MODEL
+from .embed_image import router as embed_image_router
 from .extract import router as extract_router
 from .generate import router as generate_router
 from .llm import default_model
@@ -35,6 +37,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="AI Graph Engine — Text Plugin", lifespan=lifespan)
 
 app.include_router(embed_router)
+app.include_router(embed_image_router)
 app.include_router(extract_router)
 app.include_router(generate_router)
 app.include_router(reason_router)
@@ -51,7 +54,8 @@ def info():
     return {
         "name": "text-plugin",
         "version": "1.0.0",
-        "capabilities": ["embed/text", "extract", "generate", "reason"],
+        "capabilities": ["embed/text", "embed/image", "extract", "generate", "reason"],
+        "image_caption_model": _IMAGE_CAPTION_MODEL,
         "embed_model": _EMBED_MODEL,
         "embed_dim": meta.get("dim", "?"),
         "embed_lang": meta.get("lang", "?"),

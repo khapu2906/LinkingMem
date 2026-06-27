@@ -38,6 +38,12 @@ pub fn save(graph: &CsrGraph, storage: &dyn StorageBackend) -> Result<()> {
     storage.write_string("edge_contexts.json",      &serde_json::to_string(&edge_contexts)?)?;
     storage.write_string("edge_embed_contexts.json",&serde_json::to_string(&edge_embed_ctxs)?)?;
 
+    let mut edge_ids: Vec<u64> = Vec::with_capacity(graph.num_edges());
+    for node_id in 0..graph.num_nodes() {
+        edge_ids.extend(std::iter::repeat(0u64).take(graph.neighbors(node_id as u32).len()));
+    }
+    storage.write_string("edge_ids.json", &serde_json::to_string(&edge_ids)?)?;
+
     tracing::info!(
         "saved graph: {} nodes, {} edges → {}",
         graph.num_nodes(), graph.num_edges(), storage.local_path().display()
@@ -71,6 +77,12 @@ pub fn load(storage: &dyn StorageBackend) -> Result<CsrGraph> {
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default();
 
+    // edge_ids.json is optional — older graphs without it get edge_id: 0
+    let edge_ids: Vec<u64> = storage.read_string("edge_ids.json")
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
+
     let mut edges: Vec<EdgeInfo> = Vec::with_capacity(num_edges);
     for (i, chunk) in edge_bytes.chunks_exact(12).enumerate() {
         let from = u32::from_le_bytes(chunk[0..4].try_into()?);
@@ -82,6 +94,7 @@ pub fn load(storage: &dyn StorageBackend) -> Result<CsrGraph> {
             full_context:  edge_contexts.get(i).cloned().unwrap_or_default(),
             embed_context: edge_embed_ctxs.get(i).cloned().unwrap_or(None),
             weight: w,
+            edge_id: edge_ids.get(i).copied().unwrap_or(0),
         });
     }
 
@@ -115,6 +128,7 @@ pub fn from_json_payload(payload: &serde_json::Value) -> Result<CsrGraph> {
         let node_type = e["type"].as_str().unwrap_or("").trim().to_string();
         nodes.push(NodeInfo {
             id:           idx as u32,
+            external_id:  str_id.clone(),
             name:         e["name"].as_str().unwrap_or("").trim().to_string(),
             node_type:    if node_type.is_empty() { "Entity".to_string() } else { node_type },
             weight:       0.0,
@@ -122,6 +136,9 @@ pub fn from_json_payload(payload: &serde_json::Value) -> Result<CsrGraph> {
             full_context:  e["full_context"].as_str().unwrap_or("").to_string(),
             embed_context: e["embed_context"].as_str()
                 .filter(|s| !s.trim().is_empty())
+                .map(|s| s.to_string()),
+            image_url:    e["image_url"].as_str()
+                .filter(|s| !s.is_empty())
                 .map(|s| s.to_string()),
         });
     }
@@ -140,6 +157,7 @@ pub fn from_json_payload(payload: &serde_json::Value) -> Result<CsrGraph> {
                 embed_context: r["embed_context"].as_str()
                     .filter(|s| !s.trim().is_empty())
                     .map(|s| s.to_string()),
+                edge_id: 0,
             });
         }
     }

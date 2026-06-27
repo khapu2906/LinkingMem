@@ -17,18 +17,24 @@ pub struct PluginClient {
     /// shared HTTP client for all HTTP endpoints
     client: reqwest::Client,
 
-    embed_text_url: String,
-    extract_url:    String,
-    generate_url:   String,
+    embed_text_url:  String,
+    embed_image_url: String,
+    image_store_url: String,
+    extract_url:     String,
+    generate_url:    String,
 
-    embed_text_token: Option<String>,
-    extract_token:    Option<String>,
-    generate_token:   Option<String>,
+    embed_text_token:  Option<String>,
+    embed_image_token: Option<String>,
+    image_store_token: Option<String>,
+    extract_token:     Option<String>,
+    generate_token:    Option<String>,
 
     /// Some = unix socket endpoint; None = use HTTP URL above
-    embed_text_socket: Option<PathBuf>,
-    extract_socket:    Option<PathBuf>,
-    generate_socket:   Option<PathBuf>,
+    embed_text_socket:  Option<PathBuf>,
+    embed_image_socket: Option<PathBuf>,
+    image_store_socket: Option<PathBuf>,
+    extract_socket:     Option<PathBuf>,
+    generate_socket:    Option<PathBuf>,
 
     health_cache: std::sync::Mutex<Option<(bool, std::time::Instant)>>,
 
@@ -72,6 +78,29 @@ struct EmbedRequest {
 #[derive(Deserialize)]
 struct EmbedResponse {
     vectors: Vec<Vec<f32>>,
+}
+
+#[derive(Serialize)]
+struct EmbedImageRequest {
+    image_url: String,
+}
+
+#[derive(Deserialize)]
+struct EmbedImageResponse {
+    vector: Vec<f32>,
+}
+
+#[derive(Serialize)]
+struct StoreImageRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    url:  Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    data: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct StoreImageResponse {
+    url: String,
 }
 
 #[derive(Serialize)]
@@ -260,21 +289,28 @@ impl PluginClient {
              extract={extract_timeout:?} generate={generate_timeout:?}"
         );
         tracing::info!(
-            "plugin endpoints — embed_text={} extract={} generate={}",
-            cfg.embed_text.url(), cfg.extract.url(), cfg.generate.url(),
+            "plugin endpoints — embed_text={} embed_image={} image_store={} extract={} generate={}",
+            cfg.embed_text.url(), cfg.embed_image.url(), cfg.image_store.url(),
+            cfg.extract.url(), cfg.generate.url(),
         );
 
         Ok(Self {
             client,
             embed_text_url:    cfg.embed_text.url().trim_end_matches('/').to_string(),
+            embed_image_url:   cfg.embed_image.url().trim_end_matches('/').to_string(),
+            image_store_url:   cfg.image_store.url().trim_end_matches('/').to_string(),
             extract_url:       cfg.extract.url().trim_end_matches('/').to_string(),
             generate_url:      cfg.generate.url().trim_end_matches('/').to_string(),
             embed_text_token:  cfg.embed_text.auth_token().map(str::to_string),
+            embed_image_token: cfg.embed_image.auth_token().map(str::to_string),
+            image_store_token: cfg.image_store.auth_token().map(str::to_string),
             extract_token:     cfg.extract.auth_token().map(str::to_string),
             generate_token:    cfg.generate.auth_token().map(str::to_string),
-            embed_text_socket: cfg.embed_text.socket().map(|p| p.to_path_buf()),
-            extract_socket:    cfg.extract.socket().map(|p| p.to_path_buf()),
-            generate_socket:   cfg.generate.socket().map(|p| p.to_path_buf()),
+            embed_text_socket:  cfg.embed_text.socket().map(|p| p.to_path_buf()),
+            embed_image_socket: cfg.embed_image.socket().map(|p| p.to_path_buf()),
+            image_store_socket: cfg.image_store.socket().map(|p| p.to_path_buf()),
+            extract_socket:     cfg.extract.socket().map(|p| p.to_path_buf()),
+            generate_socket:    cfg.generate.socket().map(|p| p.to_path_buf()),
             health_cache: std::sync::Mutex::new(None),
             embed_timeout,
             extract_timeout,
@@ -361,6 +397,47 @@ impl PluginClient {
     pub async fn embed_one(&self, text: &str) -> Result<Vec<f32>> {
         let mut vecs = self.embed(vec![text.to_string()]).await?;
         vecs.pop().ok_or_else(|| anyhow::anyhow!("empty embed response"))
+    }
+
+    /// Embed an image by URL or base64 data-URI.
+    /// The plugin generates a caption via Vision LLM, then embeds it in the same
+    /// vector space as text nodes — enabling cross-modal graph search.
+    pub async fn embed_image(&self, image_url: &str) -> Result<Vec<f32>> {
+        let resp: EmbedImageResponse = self
+            .post(
+                &self.embed_image_url,
+                self.embed_image_socket.as_deref(),
+                self.embed_image_token.as_deref(),
+                "/embed/image",
+                &EmbedImageRequest { image_url: image_url.to_string() },
+                self.embed_timeout,
+            )
+            .await?;
+        Ok(resp.vector)
+    }
+
+    /// Store an image on the image plugin and return the stable URL.
+    ///
+    /// `data` is either an `http(s)://` URL or a `data:<mime>;base64,<payload>` URI.
+    /// The plugin writes it content-addressed to local disk and returns the served URL.
+    /// Only call this when `ImageConfig.auto_store` is true.
+    pub async fn store_image(&self, data: &str) -> Result<String> {
+        let req = if data.starts_with("data:") {
+            StoreImageRequest { url: None, data: Some(data.to_string()) }
+        } else {
+            StoreImageRequest { url: Some(data.to_string()), data: None }
+        };
+        let resp: StoreImageResponse = self
+            .post(
+                &self.image_store_url,
+                self.image_store_socket.as_deref(),
+                self.image_store_token.as_deref(),
+                "/store",
+                &req,
+                self.embed_timeout,
+            )
+            .await?;
+        Ok(resp.url)
     }
 
     pub async fn extract(&self, text: &str, hints: Option<LlmHints>) -> Result<ExtractResponse> {

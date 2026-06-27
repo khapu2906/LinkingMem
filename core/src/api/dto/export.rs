@@ -12,6 +12,8 @@ pub struct ExportNode {
     pub full_context: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub embed_context: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_url: Option<String>,
 }
 
 /// A single edge in the exported payload.
@@ -78,6 +80,8 @@ pub enum NdjsonLine {
         full_context: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         embed_context: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        image_url: Option<String>,
     },
     Edge {
         from: String,

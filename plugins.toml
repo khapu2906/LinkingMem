@@ -22,6 +22,27 @@ transport = "unix"
 socket    = "/tmp/ai-graph-plugin.sock"
 
 # ------------------------------------------------------------
+# Image embedding plugin  →  POST /embed/image
+# Vision LLM generates a caption, then the text model embeds it.
+# Set IMAGE_CAPTION_MODEL env var to control the vision model.
+# Points at the image plugin process (default port 8002).
+# ------------------------------------------------------------
+[plugins.embed_image]
+transport = "http"
+url       = "http://localhost:8002"
+
+# ------------------------------------------------------------
+# Image store plugin  →  POST /store
+# Saves raw images (base64 data-URI or URL) to local disk,
+# content-addressed by SHA-256, and returns a stable HTTP URL.
+# Only used when [image] auto_store = true.
+# Points at the image plugin process (default port 8002).
+# ------------------------------------------------------------
+[plugins.image_store]
+transport = "http"
+url       = "http://localhost:8002"
+
+# ------------------------------------------------------------
 # Entity extraction plugin  →  POST /extract
 # ------------------------------------------------------------
 [plugins.extract]
@@ -43,6 +64,24 @@ socket    = "/tmp/ai-graph-plugin.sock"
 # All values can also be set via environment variables
 # (env vars take priority over this file).
 # ============================================================
+
+# ============================================================
+# Image storage configuration
+# ============================================================
+# When auto_store = true, any image node's image_url (whether a
+# base64 data-URI or an external http URL) is first sent to the
+# image plugin's /store endpoint, which saves the file to local
+# disk content-addressed by SHA-256 and returns a stable URL.
+# The stable URL is then stored on the node and used for embedding.
+#
+# Set to false (default) to skip storage — the engine will embed
+# images directly from their original URL / data-URI without saving.
+#
+# Env override: IMAGE_AUTO_STORE=true
+# ============================================================
+
+[image]
+auto_store = false
 
 [query]
 # Top-k seeds from HNSW vector search         (env: HNSW_K)

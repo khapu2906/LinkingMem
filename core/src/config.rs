@@ -29,6 +29,7 @@ pub struct AppConfig {
     pub auth:    AuthConfig,
     pub ingest:  IngestConfig,
     pub query:   QueryConfig,
+    pub image:   ImageConfig,
 }
 
 impl AppConfig {
@@ -49,6 +50,7 @@ impl AppConfig {
             auth:    AuthConfig::resolve(),
             ingest:  IngestConfig::resolve(&file_cfg.ingest),
             query:   QueryConfig::resolve(&file_cfg.query),
+            image:   ImageConfig::resolve(&file_cfg.image),
         })
     }
 }
@@ -100,24 +102,34 @@ impl DataConfig {
 
 #[derive(Debug, Clone)]
 pub struct PluginsConfig {
-    pub embed_text: PluginEndpoint,
-    pub extract:    PluginEndpoint,
-    pub generate:   PluginEndpoint,
+    pub embed_text:  PluginEndpoint,
+    /// Image embed endpoint (vision LLM caption → text embed).
+    /// Defaults to same socket/URL as embed_text for single-process deployments.
+    /// Set PLUGIN_EMBED_IMAGE_URL or [plugins.embed_image] to point at the image plugin.
+    pub embed_image: PluginEndpoint,
+    /// Image store endpoint (save image to disk/S3 → stable URL).
+    /// Only used when ImageConfig.auto_store = true.
+    /// Set PLUGIN_IMAGE_STORE_URL or [plugins.image_store] to point at the image plugin.
+    pub image_store: PluginEndpoint,
+    pub extract:     PluginEndpoint,
+    pub generate:    PluginEndpoint,
 }
 
 impl PluginsConfig {
     fn resolve(file: &FilePluginsConfig) -> Self {
         Self {
-            embed_text: PluginEndpoint::resolve(&file.embed_text, "PLUGIN_EMBED_TEXT_URL", "PLUGIN_URL"),
-            extract:    PluginEndpoint::resolve(&file.extract,    "PLUGIN_EXTRACT_URL",    "PLUGIN_URL"),
-            generate:   PluginEndpoint::resolve(&file.generate,   "PLUGIN_GENERATE_URL",   "PLUGIN_URL"),
+            embed_text:  PluginEndpoint::resolve(&file.embed_text,  "PLUGIN_EMBED_TEXT_URL",   "PLUGIN_URL"),
+            embed_image: PluginEndpoint::resolve(&file.embed_image, "PLUGIN_EMBED_IMAGE_URL",  "PLUGIN_URL"),
+            image_store: PluginEndpoint::resolve(&file.image_store, "PLUGIN_IMAGE_STORE_URL",  "PLUGIN_URL"),
+            extract:     PluginEndpoint::resolve(&file.extract,     "PLUGIN_EXTRACT_URL",      "PLUGIN_URL"),
+            generate:    PluginEndpoint::resolve(&file.generate,    "PLUGIN_GENERATE_URL",     "PLUGIN_URL"),
         }
     }
 
     /// Convenience constructor for CLIs that only need a single plugin URL with no auth.
     pub fn from_single_url(url: &str) -> Self {
         let ep = PluginEndpoint::Http { url: url.to_string(), auth_token: None };
-        Self { embed_text: ep.clone(), extract: ep.clone(), generate: ep }
+        Self { embed_text: ep.clone(), embed_image: ep.clone(), image_store: ep.clone(), extract: ep.clone(), generate: ep }
     }
 }
 
@@ -275,6 +287,25 @@ impl QueryConfig {
     }
 }
 
+// ── Image ─────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub struct ImageConfig {
+    /// When true: before embedding an image node, store the image (base64 or URL)
+    /// via the image_store plugin and replace image_url with the stable stored URL.
+    /// Env: IMAGE_AUTO_STORE ("true"/"false")
+    pub auto_store: bool,
+}
+
+impl ImageConfig {
+    fn resolve(file: &FileImageConfig) -> Self {
+        Self {
+            auto_store: env_parse::<bool>("IMAGE_AUTO_STORE")
+                .unwrap_or(file.auto_store.unwrap_or(false)),
+        }
+    }
+}
+
 // ── Ingest ────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
@@ -312,6 +343,7 @@ struct FileConfig {
     #[serde(default)] delta:   FileDeltaConfig,
     #[serde(default)] ingest:  FileIngestConfig,
     #[serde(default)] query:   FileQueryConfig,
+    #[serde(default)] image:   FileImageConfig,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -338,9 +370,16 @@ struct FileDataConfig {
 
 #[derive(Debug, Default, Deserialize)]
 struct FilePluginsConfig {
-    #[serde(default)] embed_text: FilePluginEntry,
-    #[serde(default)] extract:    FilePluginEntry,
-    #[serde(default)] generate:   FilePluginEntry,
+    #[serde(default)] embed_text:  FilePluginEntry,
+    #[serde(default)] embed_image: FilePluginEntry,
+    #[serde(default)] image_store: FilePluginEntry,
+    #[serde(default)] extract:     FilePluginEntry,
+    #[serde(default)] generate:    FilePluginEntry,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct FileImageConfig {
+    auto_store: Option<bool>,
 }
 
 #[derive(Debug, Default, Deserialize)]
