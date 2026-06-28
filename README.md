@@ -1,6 +1,6 @@
 
 <div align="center">
-  <img src="https://github.com/khapu2906/jet/blob/main/assets/logo.png?raw=true" alt="Jet" width="200" />
+  <img src="https://github.com/khapu2906/LinkingMem/blob/main/assets/logo.png?raw=true" alt="LinkingMem" width="200" />
 </div>
 
 # LinkingMem — Graph-native RAG Engine
